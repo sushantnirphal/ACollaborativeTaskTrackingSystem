@@ -1,0 +1,146 @@
+STEP-BY-STEP IMPLEMENTATION PLAN (EXECUTION LOG)
+============================================================
+Project   : ACollaborativeTask-TrackingSystem
+Base path : ACollaborativeTask-TrackingSystem/
+Base pkg  : com.cts
+Stack     : Java 17, Spring Boot 4.1.1, Spring Security (JWT),
+            Spring Data JPA, MySQL, Maven
+
+Rule: Build one phase at a time. Verify the build compiles at each phase.
+
+------------------------------------------------------------------------
+PHASE 1 - PROJECT SETUP
+------------------------------------------------------------------------
+Goal: project compiles + connects to MySQL.
+Steps:
+  [ ] 1.1 Add jjwt dependencies to pom.xml
+  [ ] 1.2 Write application.properties (MySQL datasource, JPA, JWT, uploads)
+  [ ] 1.3 Verify: ./mvnw compile  (MySQL does not need to be running yet)
+  Done when: `mvn compile` succeeds.
+
+------------------------------------------------------------------------
+PHASE 2 - DATA MODEL (ENTITIES + REPOSITORIES)
+------------------------------------------------------------------------
+Goal: all JPA entities and Spring Data repositories exist.
+Steps:
+  [ ] 2.1 entity/User.java
+  [ ] 2.2 entity/Team.java
+  [ ] 2.3 entity/TeamMember.java  (+ Role enum: OWNER, MEMBER)
+  [ ] 2.4 entity/Task.java         (+ TaskStatus, TaskPriority enums)
+  [ ] 2.5 entity/Comment.java
+  [ ] 2.6 entity/Attachment.java
+  [ ] 2.7 enum files (Role, TaskStatus, TaskPriority)
+  [ ] 2.8 repository/: UserRepository, TeamRepository, TeamMemberRepository,
+        TaskRepository, CommentRepository, AttachmentRepository
+  [ ] 2.9 Verify: ./mvnw compile
+  Done when: compiles; schema auto-generates on boot against MySQL.
+
+------------------------------------------------------------------------
+PHASE 3 - JWT SECURITY
+------------------------------------------------------------------------
+Goal: stateless JWT auth; passwords BCrypt-hashed.
+Steps:
+  [ ] 3.1 config/JwtConfig (+ secret/expiry from properties)
+  [ ] 3.2 security/JwtUtil (generate + validate token)
+  [ ] 3.3 security/CustomUserDetailsService (load user by email)
+  [ ] 3.4 security/JwtAuthenticationFilter (OncePerRequestFilter)
+  [ ] 3.5 config/SecurityConfig (SecurityFilterChain, BCrypt bean, stateless)
+  [ ] 3.6 Verify: ./mvnw compile
+  Done when: requests to protected endpoints return 401 without a token.
+
+------------------------------------------------------------------------
+PHASE 4 - AUTH API (REGISTER / LOGIN / PROFILE)
+------------------------------------------------------------------------
+Goal: register, login (returns JWT), view/update profile.
+Steps:
+  [ ] 4.1 dto/auth: RegisterRequest, LoginRequest, AuthResponse
+        dto/user: UserResponse, UpdateUserRequest
+  [ ] 4.2 service/AuthService (register + login)
+  [ ] 4.3 service/UserService (me + update)
+  [ ] 4.4 controller/AuthController
+  [ ] 4.5 controller/UserController
+  [ ] 4.6 Wire AuthController into SecurityConfig (permit /api/auth/**)
+  [ ] 4.7 Verify: ./mvnw compile
+  Done when: register/login work via Postman/curl.
+
+------------------------------------------------------------------------
+PHASE 5 - TASK CRUD + FILTER / SEARCH / SORT / PAGINATION
+------------------------------------------------------------------------
+Goal: full task lifecycle + list tasks assigned to me + filter/search.
+Steps:
+  [ ] 5.1 dto/task: TaskRequest, TaskUpdateRequest, TaskResponse
+  [ ] 5.2 service/TaskService (CRUD, assign, mark done, filters)
+  [ ] 5.3 controller/TaskController
+  [ ] 5.4 repository/TaskRepository query methods
+        (findByAssignee, findByStatus, search by title/description)
+  [ ] 5.5 Verify: ./mvnw compile
+  Done when: CRUD, filter by status, search, sort, pagination all work.
+
+------------------------------------------------------------------------
+PHASE 6 - TEAM MANAGEMENT + MEMBERS
+------------------------------------------------------------------------
+Goal: create/join teams, invite members, assign tasks within a team.
+Steps:
+  [ ] 6.1 dto/team: TeamCreateRequest, TeamResponse, AddMemberRequest
+  [ ] 6.2 service/TeamService (create, list, get, update, delete, add/remove member)
+  [ ] 6.3 controller/TeamController
+  [ ] 6.4 Link tasks to a team (task.team_id field already in model)
+  [ ] 6.5 Verify: ./mvnw compile
+  Done when: team + member endpoints work; only owner can delete/remove.
+
+------------------------------------------------------------------------
+PHASE 7 - COMMENTS + ATTACHMENTS
+------------------------------------------------------------------------
+Goal: collaborate on tasks via comments and file attachments.
+Steps:
+  [ ] 7.1 dto/comment: CommentRequest, CommentResponse
+  [ ] 7.2 service/CommentService + controller/CommentController
+  [ ] 7.3 dto/attachment: AttachmentResponse
+  [ ] 7.4 config: uploads dir path in application.properties
+  [ ] 7.5 service/AttachmentService (save file to disk + metadata in DB)
+  [ ] 7.6 controller/AttachmentController (upload / list / download)
+  [ ] 7.7 Verify: ./mvnw compile
+  Done when: add/list comments, upload/list/download attachments work.
+
+------------------------------------------------------------------------
+PHASE 8 - GLOBAL VALIDATION & ERROR HANDLING
+------------------------------------------------------------------------
+Goal: consistent errors; validation on all requests.
+Steps:
+  [ ] 8.1 exception/ApiError (body)
+  [ ] 8.2 exception/GlobalExceptionHandler (@RestControllerAdvice)
+  [ ] 8.3 custom exceptions (ResourceNotFound, DuplicateResource, etc.)
+  [ ] 8.4 Add @Valid annotations to all controllers + @Pattern/@Size on DTOs
+  [ ] 8.5 Verify: ./mvnw compile
+  Done when: invalid input returns 400 with consistent JSON; 404/409/etc. correct.
+
+------------------------------------------------------------------------
+PHASE 9 - TESTING
+------------------------------------------------------------------------
+Goal: smoke + core service/controller coverage.
+Steps:
+  [ ] 9.1 Fix/keep ACollaborativeTaskTrackingSystemApplicationTests
+  [ ] 9.2 Service unit tests (TaskService, AuthService) with Mockito
+  [ ] 9.3 Controller integration tests (H2 or MySQL) with Spring Security test
+  [ ] 9.4 Verify: ./mvnw test
+  Done when: all tests green.
+
+------------------------------------------------------------------------
+PHASE 10 - DELIVERABLES & SUBMISSION
+------------------------------------------------------------------------
+Goal: ready for GitHub submission.
+Steps:
+  [ ] 10.1 README.md (setup, run, API endpoints, user stories mapping)
+  [ ] 10.2 .gitignore confirmed (target/, .idea/, secrets)
+  [ ] 10.3 Update implementation.txt / architecture.txt / this log with results
+  [ ] 10.4 Full end-to-end manual check via curl/Postman
+  [ ] 10.5 Push to PUBLIC GitHub repo
+  Done when: repo is public, README complete, everything works.
+
+------------------------------------------------------------------------
+PROGRESS LOG
+------------------------------------------------------------------------
+[2026-08-29] Planning file created.
+[2026-08-29] PHASE 1 DONE - jjwt 0.12.6 deps added, application.properties
+              (MySQL/JPA/JWT/uploads) written. `mvn compile` passes.
+[2026-08-29] PHASE 2 in progress - entities + repositories.

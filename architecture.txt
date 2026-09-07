@@ -1,0 +1,192 @@
+ARCHITECTURE - A Collaborative Task Tracking System
+====================================================
+
+Project   : ACollaborativeTask-TrackingSystem
+Stack     : Java 17, Spring Boot 4.1.1, Spring MVC, Spring Security (JWT),
+            Spring Data JPA (Hibernate), MySQL, Maven
+Arch style: Layered (3-tier) RESTful backend.
+
+------------------------------------------------------------------------
+1. HIGH-LEVEL OVERVIEW
+------------------------------------------------------------------------
+
++-------------+        HTTPS/JSON + JWT        +--------------------------------+
+| REST Client | -----------------------------> |  Spring Boot Application       |
+| (Postman /  | <----------------------------- |  (com.cts @ localhost:8080)    |
+|  Web/UI)    |             HTTP 200/4xx/5xx   +--------------------------------+
++-------------+                                       |
+                                                      | SQL (JPA)
+                                                      v
+                                               +-----------+
+                                               |   MySQL   |
+                                               |  Database |
+                                               +-----------+
+
+------------------------------------------------------------------------
+2. LAYERED ARCHITECTURE
+------------------------------------------------------------------------
+
+   Request
+   -------->
+ [ Controller Layer ]  REST endpoints, request/response mapping (DTOs)
+        |
+        v
+ [   Service Layer  ]  Business logic, validation orchestration,
+ |                    transactions (@Transactional), authorization checks
+        v
+ [ Repository Layer ]  Spring Data JPA interfaces (CrudRepository/
+ |                    JpaRepository) -> DB access
+        v
+ [   Database (MySQL) ]  6 tables (see Data Model)
+
+Cross-cutting:
+  - Security Layer   : JwtAuthenticationFilter -> SecurityFilterChain
+  - Exception Layer  : @RestControllerAdvice -> GlobalExceptionHandler
+  - Config Layer     : SecurityConfig, JwtConfig
+
+------------------------------------------------------------------------
+3. PACKAGE / COMPONENT STRUCTURE (com.cts)
+------------------------------------------------------------------------
+
+com.cts
+ ├─ controller/  (REST layer - thin, delegates to services)
+ │    AuthController          /api/auth/*
+ │    UserController          /api/users/*
+ │    TeamController          /api/teams/*
+ │    TaskController          /api/tasks/*
+ │    CommentController       /api/tasks/{id}/comments
+ │    AttachmentController    /api/tasks/{id}/attachments, /api/attachments/*
+ ├─ service/     (business logic)
+ │    AuthService / UserService / TeamService / TaskService
+ │    CommentService / AttachmentService
+ ├─ repository/  (Spring Data interfaces)
+ │    UserRepository / TeamRepository / TeamMemberRepository
+ │    TaskRepository / CommentRepository / AttachmentRepository
+ ├─ entity/      (JPA entities + enums: TaskStatus, TaskPriority, Role)
+ ├─ dto/         (records: request DTOs + response DTOs for each resource)
+ ├─ security/    (JwtUtil, JwtAuthenticationFilter, CustomUserDetailsService)
+ ├─ exception/   (GlobalExceptionHandler, ApiError, custom exceptions)
+ └─ config/      (SecurityConfig, JwtConfig)
+
+------------------------------------------------------------------------
+4. DATA MODEL / DATABASE SCHEMA (core tables)
+------------------------------------------------------------------------
+
+TABLE users          (id, email UNIQUE, username, password_hash(BCrypt),
+                      first_name, last_name, created_at, updated_at)
+
+TABLE teams          (id, name, description, owner_id FK->users, created_at)
+
+TABLE team_members   (id, team_id FK, user_id FK, role ENUM(OWNER,MEMBER),
+                      UNIQUE(team_id,user_id))
+
+TABLE tasks          (id, title, description, status ENUM(TO_DO/IN_PROGRESS/
+                      DONE), priority ENUM(LOW/MEDIUM/HIGH), due_date,
+                      assignee_id FK->users (nullable), created_by FK->users,
+                      team_id FK->teams (nullable), created_at, updated_at)
+
+TABLE comments       (id, content, author_id FK->users, task_id FK->tasks,
+                      created_at)
+
+TABLE attachments    (id, file_name, file_type, file_url, size,
+                      uploaded_by FK->users, task_id FK->tasks, uploaded_at)
+
+(FUTURE) TABLE notifications  - deferred, see FUTURE SCOPE section.
+
+Relationships
+  users 1---------N teams        (owner)
+  teams N---------N users        (members, via team_members with role)
+  users 1---------N tasks        (created_by)
+  users 1---------N tasks        (assignee)
+  teams 1---------N tasks        (optional scoping of tasks to a team)
+  users 1---------N comments
+  tasks 1---------N comments
+  tasks 1---------N attachments
+  users 1---------N attachments (uploaded_by)
+
+------------------------------------------------------------------------
+5. REQUEST FLOW EXAMPLES
+------------------------------------------------------------------------
+
+5.1 Login
+  Client --POST /api/auth/login {email,password}--> AuthController
+    AuthService verifies BCrypt hash -> JwtUtil issues token
+    <-- 200 {accessToken, tokenType:"Bearer", user...} --> Client
+
+5.2 Authenticated request (e.g., create task)
+  Client --POST /api/tasks + "Authorization: Bearer <jwt>"--> JwtAuthenticationFilter
+    Filter validates token -> sets SecurityContext Authentication
+    TaskController -> TaskService (checks user, sets assignee/team)
+      TaskRepository.save()  -> MySQL
+    <-- 201 {task JSON} --> Client
+
+5.3 Error handling
+  Any exception -> GlobalExceptionHandler -> 400/401/403/404/409/500
+  Consistent body: { "timestamp":..., "status":..., "error":...,
+                     "message":..., "path":... }
+
+------------------------------------------------------------------------
+6. SECURITY ARCHITECTURE
+------------------------------------------------------------------------
+  - Stateless JWT (jjwt), secret in application.properties, expiry time
+  - BCrypt password hashing (never store plaintext)
+  - SecurityConfig:
+        .csrf(disable) .sessionManagement(STATELESS)
+        .authorizeHttpRequests: permit /api/auth/**, require auth for the rest
+        addFilterBefore(JwtAuthenticationFilter, UsernamePasswordAuthenticationFilter)
+  - Role-based checks: only team owner/manager can assign/remove members,
+    task owner/assignee can update/delete
+  - Input validation before any service call (@Valid on DTOs)
+
+------------------------------------------------------------------------
+7. API SURFACE SUMMARY
+------------------------------------------------------------------------
+  AUTH          POST /api/auth/register  POST /api/auth/login
+                GET/PUT /api/users/me
+  TEAMS         POST/GET /api/teams      GET/PUT/DELETE /api/teams/{id}
+                POST/DELETE /api/teams/{id}/members
+  TASKS         POST/GET /api/tasks      GET/PUT/DELETE /api/tasks/{id}
+                GET /api/tasks/assigned-to-me
+                query: ?status= / ?search= / ?sort=
+  COMMENTS      POST/GET /api/tasks/{id}/comments
+  ATTACHMENTS   POST/GET /api/tasks/{id}/attachments
+                GET /api/attachments/{id}/download
+  (NO OPTIONAL FEATURES IN SCOPE - see future scope below)
+
+------------------------------------------------------------------------
+8. DEPLOYMENT / RUNTIME CONFIGURATION
+------------------------------------------------------------------------
+  - Java 17, Maven build (./mvnw spring-boot:run)
+  - MySQL connection: URL/user/password via application.properties
+  - Hibernate ddl-auto=update (dev) / validate (prod)
+  - File storage: local uploads/ dir (configurable path), or cloud bucket
+  - Port default 8080
+  - Production: run via java -jar target/ACollaborativeTask-TrackingSystem-0.0.1-SNAPSHOT.jar
+
+------------------------------------------------------------------------
+9. FUTURE SCOPE (NOT IN THIS BUILD - DECIDED LATER)
+------------------------------------------------------------------------
+The design keeps these out of the current build but remains extensible:
+
+  - Real-time notifications / WebSocket / SSE
+      Layers to add when needed:
+        dependency: spring-boot-starter-websocket
+        config/WebSocketConfig      STOMP endpoint /ws, message broker
+        NotificationService         publishes to /topic/team.{teamId} on
+                                      task.assigned / task.updated / comment.added
+        entity: Notification table   (+ NotificationRepository)
+        SSE alternative: SseEmitter per user
+  - Generative AI task descriptions/summaries
+        service/AiService (OpenAI-compatible), endpoint POST /api/ai/summarize
+  - JWT token blacklist on logout (server-side revocation)
+  - Lombok to reduce boilerplate
+
+------------------------------------------------------------------------
+10. DESIGN PRINCIPLES FOLLOWED
+------------------------------------------------------------------------
+  - RESTful best practices (nouns, standard verbs, correct status codes)
+  - Layered separation: controllers thin, services hold logic
+  - DTOs decouple API contract from entities
+  - Single source of truth for errors via @RestControllerAdvice
+  - Stateless auth -> horizontally scalable
+  - Code organized for maintainability (com.cts.* packages)

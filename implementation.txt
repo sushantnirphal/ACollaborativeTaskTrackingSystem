@@ -1,0 +1,198 @@
+IMPLEMENTATION PLAN - A Collaborative Task Tracking System
+==========================================================
+
+Project: ACollaborativeTask-TrackingSystem
+Stack   : Java 17, Spring Boot 4.1.1, Spring MVC, Spring Security (JWT),
+          Spring Data JPA, MySQL, Maven
+
+Base package: com.cts
+
+------------------------------------------------------------------------
+PHASE 1 - PROJECT SETUP
+------------------------------------------------------------------------
+
+1.1 Dependencies to add in pom.xml
+    - spring-boot-starter-webmvc          (REST API)
+    - spring-boot-starter-data-jpa        (ORM)
+    - spring-boot-starter-security        (auth)
+    - spring-boot-starter-validation      (bean validation)
+    - mysql-connector-j                   (MySQL driver, runtime)
+    - jjwt-api / jjwt-impl / jjwt-jackson (JWT generation/validation)
+
+1.2 application.properties
+    - Server port (8080)
+    - DataSource URL, username, password for MySQL
+    - spring.jpa.hibernate.ddl-auto=update
+    - spring.jpa.show-sql=true
+    - JWT secret key, token expiration time
+    - Multipart file size limits (for attachments)
+
+------------------------------------------------------------------------
+PHASE 2 - DATA MODEL (ENTITIES)
+------------------------------------------------------------------------
+
+2.1 User
+    - id, email (unique), username, passwordHash (BCrypt),
+      firstName, lastName, createdAt, updatedAt
+
+2.2 Team (Project)
+    - id, name, description, owner (User), createdAt
+    - Members: ManyToMany with role (OWNER, MEMBER)
+
+2.3 TeamMember (join entity)
+    - team, user, role (USER_STORY: invite/join)
+
+2.4 Task
+    - id, title, description, status (TO_DO, IN_PROGRESS, DONE),
+      priority (LOW, MEDIUM, HIGH), dueDate, createdAt, updatedAt
+    - assignee (User), createdBy (User), team (Team, nullable)
+
+2.5 Comment
+    - id, content, author (User), task (Task), createdAt
+
+2.6 Attachment
+    - id, fileName, fileType, fileUrl (or stored bytes), uploadedBy (User),
+      task (Task), uploadedAt
+
+------------------------------------------------------------------------
+PHASE 3 - SECURITY / AUTHENTICATION (JWT)
+------------------------------------------------------------------------
+
+3.1 User registration   -> POST /api/auth/register
+    - Validate email uniqueness, password strength
+    - Encode password with BCryptPasswordEncoder
+3.2 User login          -> POST /api/auth/login
+    - Verify credentials, issue JWT access token
+3.3 JWT workflow
+    - Filter: JwtAuthenticationFilter extends OncePerRequestFilter
+    - reads Authorization: Bearer <token>, validates and sets SecurityContext
+    - Configure SecurityFilterChain in a SecurityConfig class
+    - Stateless sessions, CSRF disabled, custom error responses for 401/403
+3.4 Password hashing    -> BCrypt (spring-security-crypto)
+3.5 Authorization
+    - @PreAuthorize on team/member operations (only owner/manager can assign)
+    - Logout: client-side token discard (stateless)
+
+------------------------------------------------------------------------
+PHASE 4 - API ENDPOINTS
+------------------------------------------------------------------------
+
+AUTH
+  POST   /api/auth/register          - create account
+  POST   /api/auth/login             - login, returns JWT
+  GET    /api/users/me               - view own profile
+  PUT    /api/users/me               - update profile
+  POST   /api/auth/logout            - logout (discard token client-side)
+
+TEAMS / PROJECTS
+  POST   /api/teams                  - create team/project
+  GET    /api/teams                  - list teams user belongs to
+  GET    /api/teams/{id}             - team details + members
+  PUT    /api/teams/{id}             - update team
+  DELETE /api/teams/{id}             - delete team (owner only)
+  POST   /api/teams/{id}/members     - invite/add member
+  DELETE /api/teams/{id}/members/{userId} - remove member
+
+TASKS
+  POST   /api/tasks                  - create task
+  GET    /api/tasks                  - list tasks (filter/sort/search)
+  GET    /api/tasks/{id}             - task detail
+  PUT    /api/tasks/{id}             - update task (title, desc, due, status, assignee, priority)
+  DELETE /api/tasks/{id}             - delete task
+  GET    /api/tasks/assigned-to-me   - tasks assigned to current user
+  GET    /api/tasks?status=DONE      - filter by status
+  GET    /api/tasks?search=keyword   - search by title/description
+  GET    /api/tasks?sort=dueDate,asc - sort
+  List endpoints use Spring Data pagination (page/size/pageable params)
+
+COMMENTS
+  POST   /api/tasks/{id}/comments    - add comment
+  GET    /api/tasks/{id}/comments    - list comments
+
+ATTACHMENTS
+  POST   /api/tasks/{id}/attachments  - upload file (multipart)
+  GET    /api/tasks/{id}/attachments  - list attachments
+  GET    /api/attachments/{fileId}    - download file
+
+------------------------------------------------------------------------
+PHASE 5 - LAYERING (package structure under com.cts)
+------------------------------------------------------------------------
+
+com.cts
+  ├─ ACollaborativeTaskTrackingSystemApplication.java
+  ├─ config/        -> SecurityConfig, JwtConfig
+  ├─ controller/    -> AuthController, UserController, TeamController,
+  |                    TaskController, CommentController, AttachmentController
+  ├─ service/       -> AuthService, UserService, TeamService, TaskService,
+  |                    CommentService, AttachmentService
+  ├─ repository/    -> UserRepository, TeamRepository, TaskRepository,
+  |                    CommentRepository, AttachmentRepository
+  ├─ entity/        -> User, Team, TeamMember, Task, Comment, Attachment
+  ├─ dto/           -> request/response records for each resource
+  ├─ security/      -> JwtUtil, JwtAuthenticationFilter, CustomUserDetailsService
+  ├─ exception/     -> GlobalExceptionHandler, ApiError, custom exceptions
+  └─ util/          -> (optional) mappers, constants
+
+------------------------------------------------------------------------
+PHASE 6 - VALIDATION & ERROR HANDLING
+------------------------------------------------------------------------
+
+6.1 Bean Validation (@Valid) on all DTOs
+    - @NotBlank, @Email, @Size, @Future for due date, etc.
+6.2 Global exception handler
+    - @RestControllerAdvice -> GlobalExceptionHandler
+    - Consistent JSON error body: { timestamp, status, error, path, message }
+    - Handle ResourceNotFoundException, DuplicateResourceException,
+      AccessDeniedException, MethodArgumentNotValidException, etc.
+
+------------------------------------------------------------------------
+PHASE 7 - TESTING
+------------------------------------------------------------------------
+
+7.1 Unit tests
+    - Service layer: TaskService, AuthService (with mocks)
+7.2 Integration tests
+    - Controller endpoints with H2 (or real MySQL) + Security test support
+7.3 Existing test: ACollaborativeTaskTrackingSystemApplicationTests (smoke test)
+
+------------------------------------------------------------------------
+PHASE 8 - DELIVERABLES & SUBMISSION
+------------------------------------------------------------------------
+
+8.1 README.md
+    - Setup instructions (MySQL config, run command mvn spring-boot:run)
+    - API documentation summary + example requests
+    - Feature list matched to the user stories
+8.2 Ensure repository is PUBLIC on GitHub
+8.3 Clean code: comments where necessary, no secrets in repo,
+    .gitignore up to date (target/, .idea/, application local secrets)
+
+------------------------------------------------------------------------
+IMPLEMENTATION ORDER CHECKLIST
+------------------------------------------------------------------------
+[ ] Phase 1 setup (dependencies + DB config)
+[ ] Entities + repositories (Phase 2)
+[ ] JWT security (Phase 3)
+[ ] Auth API (register/login/profile) tested
+[ ] Task CRUD + filtering/search (Phase 4)
+[ ] Team management + members (Phase 4)
+[ ] Comments + attachments (Phase 4)
+[ ] Global validation/error handling (Phase 6)
+[ ] Tests (Phase 7)
+[ ] README + GitHub public repo (Phase 8)
+
+------------------------------------------------------------------------
+FUTURE SCOPE (NOT IN THIS BUILD - DECIDED LATER)
+------------------------------------------------------------------------
+These optional features are intentionally NOT built now. Keep the design
+extensible so they can be added later without rework:
+
+  - Real-time notifications (WebSocket / Server-Sent Events)
+      - Add spring-boot-starter-websocket when needed
+      - Notification entity + NotificationService
+      - STOMP channel /ws publishing task.assigned / task.updated / comment.added
+  - Generative AI task description/summary
+      - AiService interface (e.g., OpenAI-compatible client)
+      - Endpoint POST /api/ai/summarize
+  - JWT token blacklist on logout (server-side revocation)
+  - Lombok to reduce boilerplate
